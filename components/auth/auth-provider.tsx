@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { useAppStore } from "@/lib/store"
 import { userApi } from "@/lib/api-client"
 import { AppError, reportError } from "@/lib/error-handler"
+import { secureStorage, isTokenExpired, validateEmail, safeJsonParse } from "@/lib/security-utils"
 
 interface AuthContextType {
   isLoading: boolean
@@ -27,19 +28,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // 检查本地存储的认证信息
-        const savedUser = localStorage.getItem("user")
-        if (savedUser) {
-          const userData = JSON.parse(savedUser)
-          setUser(userData)
+        // 初始化安全存储
+        await secureStorage.initializeKey()
 
-          // 验证token是否仍然有效
-          try {
-            await userApi.getProfile()
-          } catch (error) {
-            // Token无效，清除用户信息
-            localStorage.removeItem("user")
-            setUser(null)
+        // 检查本地存储的认证信息
+        const savedUserJson = await secureStorage.getItem("user")
+        if (savedUserJson) {
+          const userData = safeJsonParse(savedUserJson, null)
+          if (userData) {
+            // 检查token是否过期
+            if (userData.expiresAt && isTokenExpired(userData.expiresAt)) {
+              // Token已过期，清除用户信息
+              await secureStorage.removeItem("user")
+              setUser(null)
+            } else {
+              setUser(userData)
+
+              // 验证token是否仍然有效
+              try {
+                await userApi.getProfile()
+              } catch (error) {
+                // Token无效，清除用户信息
+                await secureStorage.removeItem("user")
+                setUser(null)
+              }
+            }
           }
         }
       } catch (error) {
@@ -55,12 +68,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true)
+
+      // 验证输入
+      if (!validateEmail(email)) {
+        throw new AppError("请输入有效的邮箱地址", "INVALID_EMAIL")
+      }
+
+      if (!password || password.length < 6) {
+        throw new AppError("密码长度至少为6个字符", "INVALID_PASSWORD")
+      }
+
       const response = await userApi.login({ email, password })
 
       if (response.success && response.data) {
         const userData = response.data
         setUser(userData)
-        localStorage.setItem("user", JSON.stringify(userData))
+        await secureStorage.setItem("user", JSON.stringify(userData))
 
         addNotification({
           type: "success",
@@ -86,12 +109,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const register = async (name: string, email: string, password: string) => {
     try {
       setIsLoading(true)
+
+      // 验证输入
+      if (!name || name.trim().length < 2) {
+        throw new AppError("用户名至少需要2个字符", "INVALID_NAME")
+      }
+
+      if (!validateEmail(email)) {
+        throw new AppError("请输入有效的邮箱地址", "INVALID_EMAIL")
+      }
+
+      if (!password || password.length < 8) {
+        throw new AppError("密码长度至少为8个字符", "INVALID_PASSWORD")
+      }
+
       const response = await userApi.register({ name, email, password })
 
       if (response.success && response.data) {
         const userData = response.data
         setUser(userData)
-        localStorage.setItem("user", JSON.stringify(userData))
+        await secureStorage.setItem("user", JSON.stringify(userData))
 
         addNotification({
           type: "success",
@@ -123,7 +160,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       reportError(error, "Logout API failed")
     } finally {
       setUser(null)
-      localStorage.removeItem("user")
+      await secureStorage.removeItem("user")
       setIsLoading(false)
 
       addNotification({
@@ -140,13 +177,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (response.success && response.data) {
         const userData = response.data
         setUser(userData)
-        localStorage.setItem("user", JSON.stringify(userData))
+        await secureStorage.setItem("user", JSON.stringify(userData))
       }
     } catch (error) {
       reportError(error, "Auth refresh failed")
       // 如果刷新失败，清除认证状态
       setUser(null)
-      localStorage.removeItem("user")
+      await secureStorage.removeItem("user")
     }
   }
 
