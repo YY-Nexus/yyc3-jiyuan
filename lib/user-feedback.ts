@@ -3,6 +3,7 @@
 import { apiClient } from "./api-client"
 import { useAppStore } from "./store"
 import { AppError, reportError } from "./error-handler"
+import { escapeHtml, sanitizeInput } from "./security-utils"
 
 // 用户反馈类型
 interface UserFeedback {
@@ -438,29 +439,56 @@ class UserFeedbackSystem {
     // 创建调查模态框
     const modal = document.createElement("div")
     modal.className = "fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    modal.innerHTML = `
-      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-gray-900">${survey.title}</h3>
-          <button class="survey-close text-gray-400 hover:text-gray-600">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+    // Create elements safely without innerHTML
+    const container = document.createElement("div")
+    container.className = "bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto"
+
+    const header = document.createElement("div")
+    header.className = "flex items-center justify-between mb-4"
+
+    const title = document.createElement("h3")
+    title.className = "text-lg font-semibold text-gray-900"
+    title.textContent = escapeHtml(survey.title)
+
+    const closeButton = document.createElement("button")
+    closeButton.className = "survey-close text-gray-400 hover:text-gray-600"
+    closeButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-          </button>
-        </div>
-        <form class="survey-form space-y-4">
-          ${survey.questions.map((question, index) => this.renderSurveyQuestion(question, index)).join("")}
-          <div class="flex gap-3 pt-4">
-            <button type="submit" class="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
-              提交
-            </button>
-            <button type="button" class="survey-close px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">
-              跳过
-            </button>
-          </div>
-        </form>
-      </div>
-    `
+            </svg>`
+
+    header.appendChild(title)
+    header.appendChild(closeButton)
+
+    const form = document.createElement("form")
+    form.className = "survey-form space-y-4"
+
+    // Render questions safely
+    survey.questions.forEach((question, index) => {
+      const questionElement = this.renderSurveyQuestionElement(question, index)
+      form.appendChild(questionElement)
+    })
+
+    const buttonContainer = document.createElement("div")
+    buttonContainer.className = "flex gap-3 pt-4"
+
+    const submitButton = document.createElement("button")
+    submitButton.type = "submit"
+    submitButton.className = "flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+    submitButton.textContent = "提交"
+
+    const skipButton = document.createElement("button")
+    skipButton.type = "button"
+    skipButton.className = "survey-close px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+    skipButton.textContent = "跳过"
+
+    buttonContainer.appendChild(submitButton)
+    buttonContainer.appendChild(skipButton)
+    form.appendChild(buttonContainer)
+
+    container.appendChild(header)
+    container.appendChild(form)
+    modal.appendChild(container)
 
     // 添加事件监听器
     const closeButtons = modal.querySelectorAll(".survey-close")
@@ -471,7 +499,6 @@ class UserFeedbackSystem {
       })
     })
 
-    const form = modal.querySelector(".survey-form") as HTMLFormElement
     form.addEventListener("submit", async (event) => {
       event.preventDefault()
       await this.submitSurveyResponse(survey.id, form)
@@ -479,6 +506,107 @@ class UserFeedbackSystem {
     })
 
     document.body.appendChild(modal)
+  }
+
+  // 安全渲染调查问题元素
+  private renderSurveyQuestionElement(question: any, index: number): HTMLElement {
+    const container = document.createElement("div")
+    container.className = "space-y-2"
+
+    const label = document.createElement("label")
+    label.className = "block text-sm font-medium text-gray-700"
+    label.textContent = `${escapeHtml(question.question)} ${question.required ? "*" : ""}`
+
+    container.appendChild(label)
+
+    switch (question.type) {
+      case "rating":
+        const ratingDiv = document.createElement("div")
+        ratingDiv.className = "flex gap-2"
+        for (let i = 0; i < 5; i++) {
+          const starLabel = document.createElement("label")
+          starLabel.className = "flex items-center"
+          const input = document.createElement("input")
+          input.type = "radio"
+          input.name = `question_${index}`
+          input.value = (i + 1).toString()
+          input.required = question.required
+          input.className = "sr-only"
+          starLabel.appendChild(input)
+          ratingDiv.appendChild(starLabel)
+        }
+        container.appendChild(ratingDiv)
+        break
+
+      case "choice":
+        const choiceDiv = document.createElement("div")
+        choiceDiv.className = "space-y-2"
+        question.options?.forEach((option: string) => {
+          const optionLabel = document.createElement("label")
+          optionLabel.className = "flex items-center"
+          const input = document.createElement("input")
+          input.type = "radio"
+          input.name = `question_${index}`
+          input.value = sanitizeInput(option)
+          input.required = question.required
+          input.className = "mr-2"
+          const span = document.createElement("span")
+          span.className = "text-sm text-gray-700"
+          span.textContent = escapeHtml(option)
+          optionLabel.appendChild(input)
+          optionLabel.appendChild(span)
+          choiceDiv.appendChild(optionLabel)
+        })
+        container.appendChild(choiceDiv)
+        break
+
+      case "text":
+        const textarea = document.createElement("textarea")
+        textarea.name = `question_${index}`
+        textarea.rows = 3
+        textarea.required = question.required
+        textarea.className =
+          "w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        textarea.placeholder = "请输入您的回答..."
+        textarea.maxLength = 1000
+        container.appendChild(textarea)
+        break
+
+      case "nps":
+        const npsDiv = document.createElement("div")
+        npsDiv.className = "flex gap-1"
+        for (let i = 0; i <= 10; i++) {
+          const npsLabel = document.createElement("label")
+          npsLabel.className = "flex-1"
+          const input = document.createElement("input")
+          input.type = "radio"
+          input.name = `question_${index}`
+          input.value = i.toString()
+          input.required = question.required
+          input.className = "sr-only peer"
+          const div = document.createElement("div")
+          div.className =
+            "w-full h-10 border border-gray-300 rounded flex items-center justify-center cursor-pointer hover:bg-blue-50 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 text-sm font-medium"
+          div.textContent = i.toString()
+          npsLabel.appendChild(input)
+          npsLabel.appendChild(div)
+          npsDiv.appendChild(npsLabel)
+        }
+        container.appendChild(npsDiv)
+
+        const npsHint = document.createElement("div")
+        npsHint.className = "flex justify-between text-xs text-gray-500"
+        const leftSpan = document.createElement("span")
+        leftSpan.textContent = "完全不推荐"
+        const rightSpan = document.createElement("span")
+        rightSpan.textContent = "非常推荐"
+        npsHint.appendChild(leftSpan)
+        npsHint.appendChild(rightSpan)
+        container.appendChild(npsHint)
+        break
+    }
+
+    return container
   }
 
   // 渲染调查问题

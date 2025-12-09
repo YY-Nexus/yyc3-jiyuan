@@ -26,6 +26,7 @@ import { Slider } from "@/components/ui/slider"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import type { SpeechRecognition, SpeechSynthesis, SpeechSynthesisVoice } from "web-speech-api"
+import { sanitizeSearchQuery, escapeHtml } from "@/lib/security-utils"
 
 interface SmartChatDialogProps {
   open: boolean
@@ -1032,14 +1033,17 @@ export function SmartChatDialog({ open, onOpenChange }: SmartChatDialogProps) {
                     >
                       <p className="text-sm leading-relaxed whitespace-pre-line">
                         {searchValue && message.content.toLowerCase().includes(searchValue.toLowerCase()) ? (
-                          <span
-                            dangerouslySetInnerHTML={{
-                              __html: message.content.replace(
-                                new RegExp(`(${searchValue})`, "gi"),
-                                '<mark class="bg-yellow-200 px-1 rounded">$1</mark>',
+                          <>
+                            {message.content.split(new RegExp(`(${sanitizeSearchQuery(searchValue)})`, "gi")).map((part, index) =>
+                              part.toLowerCase() === searchValue.toLowerCase() ? (
+                                <mark key={index} className="bg-yellow-200 px-1 rounded">
+                                  {part}
+                                </mark>
+                              ) : (
+                                <span key={index}>{part}</span>
                               ),
-                            }}
-                          />
+                            )}
+                          </>
                         ) : (
                           message.content
                         )}

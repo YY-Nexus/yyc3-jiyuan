@@ -1,5 +1,6 @@
 import { AppError, reportError } from "./error-handler"
 import { useAppStore } from "./store"
+import { generateCsrfToken, rateLimiter, sanitizeInput } from "./security-utils"
 
 // API响应接口
 interface ApiResponse<T = any> {
@@ -46,11 +47,31 @@ class ApiClient {
       if (user) {
         config.headers = {
           ...config.headers,
-          Authorization: `Bearer ${user.id}`, // 这里应该是真实的token
+          Authorization: `Bearer ${user.token || user.id}`, // 使用真实的token
         }
       }
+
+      // 添加CSRF token到所有非GET请求
+      if (config.method && config.method !== "GET") {
+        const csrfToken = this.getCsrfToken()
+        config.headers = {
+          ...config.headers,
+          "X-CSRF-Token": csrfToken,
+        }
+      }
+
       return config
     })
+  }
+
+  // 获取或生成CSRF token
+  private getCsrfToken(): string {
+    let token = sessionStorage.getItem("csrf_token")
+    if (!token) {
+      token = generateCsrfToken()
+      sessionStorage.setItem("csrf_token", token)
+    }
+    return token
   }
 
   // 添加请求拦截器
@@ -89,6 +110,13 @@ class ApiClient {
   // 核心请求方法
   private async request<T>(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<ApiResponse<T>> {
     const url = `${this.config.baseURL}${endpoint}`
+
+    // 检查速率限制
+    const rateLimitKey = `api_${endpoint}_${options.method || "GET"}`
+    if (!rateLimiter.isAllowed(rateLimitKey, 10, 60000)) {
+      // 每分钟最多10个请求
+      throw new AppError("请求过于频繁，请稍后再试", "RATE_LIMIT_EXCEEDED", 429)
+    }
 
     try {
       // 设置超时
