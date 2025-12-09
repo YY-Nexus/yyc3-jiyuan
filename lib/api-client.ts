@@ -1,369 +1,129 @@
-import { AppError, reportError } from "./error-handler"
-import { useAppStore } from "./store"
+import type { ApiResponse, PaginationParams } from "@/types"
 
-// API响应接口
-interface ApiResponse<T = any> {
-  data: T
-  success: boolean
-  message: string
-  code: string
-  timestamp: string
+type FetchOptions = RequestInit & {
+  params?: Record<string, string>
 }
 
-// API配置接口
-interface ApiConfig {
-  baseURL: string
-  timeout: number
-  headers: Record<string, string>
-  retries: number
-  retryDelay: number
-}
+/**
+ * 通用API请求客户端
+ * @param endpoint API端点路径，不包含/api前缀
+ * @param options 请求选项
+ * @returns 响应数据
+ */
+export async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promise<ApiResponse<T>> {
+  const { params, ...fetchOptions } = options
 
-// 请求拦截器类型
-type RequestInterceptor = (config: RequestInit) => RequestInit | Promise<RequestInit>
-type ResponseInterceptor = (response: Response) => Response | Promise<Response>
+  let url = `/api${endpoint}`
+  if (params) {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        searchParams.append(key, value)
+      }
+    })
+    const queryString = searchParams.toString()
+    if (queryString) {
+      url += `?${queryString}`
+    }
+  }
 
-class ApiClient {
-  private config: ApiConfig
-  private requestInterceptors: RequestInterceptor[] = []
-  private responseInterceptors: ResponseInterceptor[] = []
-
-  constructor(config: Partial<ApiConfig> = {}) {
-    this.config = {
-      baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api",
-      timeout: 30000,
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
       headers: {
         "Content-Type": "application/json",
+        ...fetchOptions.headers,
       },
-      retries: 3,
-      retryDelay: 1000,
-      ...config,
-    }
-
-    // 添加默认请求拦截器
-    this.addRequestInterceptor((config) => {
-      const { user } = useAppStore.getState()
-      if (user) {
-        config.headers = {
-          ...config.headers,
-          Authorization: `Bearer ${user.id}`, // 这里应该是真实的token
-        }
-      }
-      return config
     })
-  }
 
-  // 添加请求拦截器
-  addRequestInterceptor(interceptor: RequestInterceptor) {
-    this.requestInterceptors.push(interceptor)
-  }
+    const data = await response.json()
 
-  // 添加响应拦截器
-  addResponseInterceptor(interceptor: ResponseInterceptor) {
-    this.responseInterceptors.push(interceptor)
-  }
-
-  // 应用请求拦截器
-  private async applyRequestInterceptors(config: RequestInit): Promise<RequestInit> {
-    let finalConfig = config
-    for (const interceptor of this.requestInterceptors) {
-      finalConfig = await interceptor(finalConfig)
-    }
-    return finalConfig
-  }
-
-  // 应用响应拦截器
-  private async applyResponseInterceptors(response: Response): Promise<Response> {
-    let finalResponse = response
-    for (const interceptor of this.responseInterceptors) {
-      finalResponse = await interceptor(finalResponse)
-    }
-    return finalResponse
-  }
-
-  // 延迟函数
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
-  }
-
-  // 核心请求方法
-  private async request<T>(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<ApiResponse<T>> {
-    const url = `${this.config.baseURL}${endpoint}`
-
-    try {
-      // 设置超时
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), this.config.timeout)
-
-      // 准备请求配置
-      let requestConfig: RequestInit = {
-        ...options,
-        signal: controller.signal,
-        headers: {
-          ...this.config.headers,
-          ...options.headers,
-        },
-      }
-
-      // 应用请求拦截器
-      requestConfig = await this.applyRequestInterceptors(requestConfig)
-
-      // 发送请求
-      let response = await fetch(url, requestConfig)
-      clearTimeout(timeoutId)
-
-      // 应用响应拦截器
-      response = await this.applyResponseInterceptors(response)
-
-      // 处理HTTP错误
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new AppError(
-          errorData.message || `HTTP Error: ${response.status}`,
-          errorData.code || "HTTP_ERROR",
-          response.status,
-          errorData,
-        )
-      }
-
-      // 解析响应
-      const data = await response.json()
-
-      // 验证响应格式
-      if (typeof data.success !== "boolean") {
-        throw new AppError("Invalid API response format", "INVALID_RESPONSE")
-      }
-
-      return data
-    } catch (error) {
-      // 处理中止错误（超时）
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new AppError("Request timeout", "TIMEOUT_ERROR")
-      }
-
-      // 重试逻辑
-      if (retryCount < this.config.retries && this.shouldRetry(error)) {
-        await this.delay(this.config.retryDelay * (retryCount + 1))
-        return this.request<T>(endpoint, options, retryCount + 1)
-      }
-
-      // 报告错误
-      reportError(error, `API Request: ${endpoint}`)
-
-      // 重新抛出错误
-      if (error instanceof AppError) {
-        throw error
-      }
-
-      throw new AppError("Network request failed", "NETWORK_ERROR")
-    }
-  }
-
-  // 判断是否应该重试
-  private shouldRetry(error: unknown): boolean {
-    if (error instanceof AppError) {
-      // 不重试客户端错误（4xx）
-      if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
-        return false
+    if (!response.ok) {
+      return {
+        error: data.error || `请求失败: ${response.status}`,
+        status: "error",
       }
     }
-    return true
-  }
 
-  // HTTP方法
-  async get<T>(endpoint: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
-    const url = params ? `${endpoint}?${new URLSearchParams(params)}` : endpoint
-    return this.request<T>(url, { method: "GET" })
-  }
-
-  async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, {
-      method: "POST",
-      body: data ? JSON.stringify(data) : undefined,
-    })
-  }
-
-  async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, {
-      method: "PUT",
-      body: data ? JSON.stringify(data) : undefined,
-    })
-  }
-
-  async patch<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, {
-      method: "PATCH",
-      body: data ? JSON.stringify(data) : undefined,
-    })
-  }
-
-  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, { method: "DELETE" })
-  }
-
-  // 文件上传
-  async upload<T>(endpoint: string, file: File, additionalData?: Record<string, any>): Promise<ApiResponse<T>> {
-    const formData = new FormData()
-    formData.append("file", file)
-
-    if (additionalData) {
-      Object.entries(additionalData).forEach(([key, value]) => {
-        formData.append(key, String(value))
-      })
+    return {
+      data: data as T,
+      status: "success",
+      message: data.message,
     }
-
-    return this.request<T>(endpoint, {
-      method: "POST",
-      body: formData,
-      headers: {}, // 让浏览器自动设置Content-Type
-    })
+  } catch (error) {
+    console.error(`API请求错误 (${url}):`, error)
+    return {
+      error: (error as Error).message || "网络请求失败",
+      status: "error",
+    }
   }
 }
 
-// 创建默认API客户端实例
-export const apiClient = new ApiClient()
+/**
+ * 构建分页参数
+ * @param params 分页参数
+ * @returns 格式化后的URL参数对象
+ */
+export function buildPaginationParams(params: PaginationParams): Record<string, string> {
+  const result: Record<string, string> = {}
 
-// 各模块的API服务
-export const imageApi = {
-  generate: (params: {
-    prompt: string
-    negativePrompt?: string
-    model: string
-    size: string
-    steps: number
-    guidance: number
-  }) => apiClient.post("/image/generate", params),
+  if (params.page !== undefined) {
+    result.page = params.page.toString()
+  }
 
-  processImage: (params: {
-    mode: string
-    file?: File
-    prompt?: string
-    model: string
-  }) => apiClient.post("/image/process", params),
+  if (params.limit !== undefined) {
+    result.limit = params.limit.toString()
+  }
 
-  upscale: (file: File, scale: number) => apiClient.upload("/image/upscale", file, { scale }),
+  if (params.query) {
+    result.query = params.query
+  }
 
-  removeBackground: (file: File) => apiClient.upload("/image/remove-bg", file),
+  if (params.sort) {
+    result.sort = params.sort
+  }
+
+  if (params.order) {
+    result.order = params.order
+  }
+
+  return result
 }
 
-export const videoApi = {
-  generate: (params: {
-    prompt: string
-    model: string
-    duration: number
-    resolution: string
-    fps: string
-  }) => apiClient.post("/video/generate", params),
-
-  edit: (
-    file: File,
-    params: {
-      operations: string[]
-      model: string
-    },
-  ) => apiClient.upload("/video/edit", file, params),
-
-  addEffects: (file: File, effects: string[]) => apiClient.upload("/video/effects", file, { effects }),
-
-  generateVoice: (params: {
-    text: string
-    voice: string
-    language: string
-  }) => apiClient.post("/video/voice", params),
-}
-
-export const musicApi = {
-  compose: (params: {
-    prompt: string
-    genre: string
-    duration: number
-    tempo: number
-    key: string
-    model: string
-  }) => apiClient.post("/music/compose", params),
-
-  edit: (file: File, operations: string[]) => apiClient.upload("/music/edit", file, { operations }),
-
-  synthesizeVoice: (params: {
-    text: string
-    voice: string
-    model: string
-  }) => apiClient.post("/music/voice", params),
-
-  searchLibrary: (query: string, filters?: Record<string, any>) =>
-    apiClient.get("/music/library", { query, ...filters }),
-}
-
-export const codeApi = {
-  generate: (params: {
-    prompt: string
-    language: string
-    model: string
-  }) => apiClient.post("/code/generate", params),
-
-  review: (params: {
-    code: string
-    language: string
-    model: string
-  }) => apiClient.post("/code/review", params),
-
-  fix: (params: {
-    code: string
-    language: string
-    model: string
-  }) => apiClient.post("/code/fix", params),
-
-  complete: (params: {
-    code: string
-    language: string
-    model: string
-  }) => apiClient.post("/code/complete", params),
-}
-
-export const engineApi = {
-  listModels: () => apiClient.get("/engine/models"),
-
-  testConnection: (params: {
-    model: string
-    apiKey?: string
-    endpoint?: string
-  }) => apiClient.post("/engine/test", params),
-
-  getModelInfo: (modelId: string) => apiClient.get(`/engine/models/${modelId}`),
-
-  updateSettings: (settings: Record<string, any>) => apiClient.put("/engine/settings", settings),
-}
-
-// 用户相关API
+/**
+ * 用户API
+ */
 export const userApi = {
-  login: (credentials: { email: string; password: string }) => apiClient.post("/auth/login", credentials),
+  getUsers: (params?: PaginationParams) => fetchApi("/users", { params: buildPaginationParams(params || {}) }),
 
-  register: (userData: { name: string; email: string; password: string }) => apiClient.post("/auth/register", userData),
+  getUserById: (id: string) => fetchApi(`/users/${id}`),
 
-  logout: () => apiClient.post("/auth/logout"),
+  createUser: (userData: Partial<User>) => fetchApi("/users", { method: "POST", body: JSON.stringify(userData) }),
 
-  getProfile: () => apiClient.get("/user/profile"),
+  updateUser: (id: string, userData: Partial<User>) =>
+    fetchApi(`/users/${id}`, { method: "PUT", body: JSON.stringify(userData) }),
 
-  updateProfile: (updates: Partial<{ name: string; email: string; avatar: string }>) =>
-    apiClient.put("/user/profile", updates),
-
-  changePassword: (data: { currentPassword: string; newPassword: string }) => apiClient.put("/user/password", data),
-
-  getUsage: () => apiClient.get("/user/usage"),
-
-  getHistory: (params?: { module?: string; limit?: number; offset?: number }) => apiClient.get("/user/history", params),
+  deleteUser: (id: string) => fetchApi(`/users/${id}`, { method: "DELETE" }),
 }
 
-// 系统API
-export const systemApi = {
-  getStatus: () => apiClient.get("/system/status"),
+/**
+ * 认证API
+ */
+export const authApi = {
+  login: (credentials: { email: string; password: string }) =>
+    fetchApi("/auth/login", { method: "POST", body: JSON.stringify(credentials) }),
 
-  getStats: () => apiClient.get("/system/stats"),
+  logout: () => fetchApi("/auth/logout", { method: "POST" }),
 
-  reportIssue: (issue: {
-    type: string
-    description: string
-    module?: string
-    severity: "low" | "medium" | "high"
-  }) => apiClient.post("/system/issues", issue),
+  getSession: () => fetchApi("/auth/session"),
+
+  register: (userData: any) => fetchApi("/auth/register", { method: "POST", body: JSON.stringify(userData) }),
+}
+
+// Define the User type
+export interface User {
+  id: string
+  name: string
+  email: string
+  // Add other properties as needed
 }
