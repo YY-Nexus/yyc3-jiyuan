@@ -12,6 +12,8 @@ const nextConfig = {
   },
 
   // Security headers
+  // Note: CSP is not included here as it requires 'unsafe-inline' and 'unsafe-eval' for v0.app compatibility
+  // For production, consider implementing nonce-based CSP for better security
   async headers() {
     return [
       {

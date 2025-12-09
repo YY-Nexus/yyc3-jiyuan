@@ -152,16 +152,68 @@ if (!rateLimiter.isAllowed(userId, 10, 60000)) {
 7. **安全的会话管理** - 使用安全的 cookie 设置
 8. **多因素认证** - 为敏感操作添加额外验证
 
+## 重要说明
+
+### 加密实现
+当前的 `SecureStorage` 实现使用简单的 XOR 混淆方法，这**不是**真正的加密，仅提供基本的数据混淆。对于生产环境，强烈建议：
+
+1. **使用 Web Crypto API**: 实现 AES-GCM 加密
+2. **密钥管理**: 从用户密码派生密钥，而不是存储在客户端
+3. **考虑服务器端存储**: 对于敏感数据，使用服务器端会话管理
+
+示例实现（Web Crypto API）:
+```typescript
+async function encryptData(data: string, password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits", "deriveKey"]
+  )
+  
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"]
+  )
+  
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv },
+    key,
+    encoder.encode(data)
+  )
+  
+  return btoa(JSON.stringify({
+    salt: Array.from(salt),
+    iv: Array.from(iv),
+    data: Array.from(new Uint8Array(encrypted))
+  }))
+}
+```
+
 ## 未来改进
 
-1. 实施更强的加密算法（Web Crypto API 的 AES-GCM）
+1. ✅ ~~实施更强的加密算法（Web Crypto API 的 AES-GCM）~~ - 需要在生产环境实现
 2. 添加 API 请求签名验证
 3. 实施基于角色的访问控制（RBAC）
 4. 添加安全审计日志
-5. 实施内容安全策略报告
+5. 实施内容安全策略报告（CSP报告URI）
 6. 添加威胁检测和响应机制
 7. 实施数据库查询参数化
 8. 添加自动安全扫描到 CI/CD 流程
+9. 移除 CSP 中的 'unsafe-inline' 和 'unsafe-eval'，使用 nonce 或 hash
+10. 实现更严格的速率限制策略（按用户、IP等）
 
 ## 参考资源
 

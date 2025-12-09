@@ -100,13 +100,14 @@ class SecureStorage {
   private encryptionKey: string | null = null
 
   // Initialize encryption key
+  // Note: In production, use proper key management (e.g., derived from user password)
   async initializeKey(): Promise<void> {
-    const stored = localStorage.getItem("_sk")
+    const stored = sessionStorage.getItem("_sk") // Use sessionStorage instead of localStorage
     if (stored) {
       this.encryptionKey = stored
     } else {
       this.encryptionKey = this.generateKey()
-      localStorage.setItem("_sk", this.encryptionKey)
+      sessionStorage.setItem("_sk", this.encryptionKey) // Session-only storage
     }
   }
 
@@ -119,8 +120,11 @@ class SecureStorage {
   private async encrypt(data: string): Promise<string> {
     if (!this.encryptionKey) await this.initializeKey()
 
-    // Simple XOR encryption for demonstration
-    // In production, use proper encryption like Web Crypto API with AES-GCM
+    // NOTE: This is a basic obfuscation, NOT cryptographically secure encryption
+    // For production, implement Web Crypto API with AES-GCM:
+    // 1. const key = await crypto.subtle.importKey(...)
+    // 2. const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data)
+    // This simple XOR is used here to avoid dependencies and provide basic obfuscation
     const key = this.encryptionKey || ""
     let result = ""
     for (let i = 0; i < data.length; i++) {

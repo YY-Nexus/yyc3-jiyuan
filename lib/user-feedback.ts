@@ -449,7 +449,7 @@ class UserFeedbackSystem {
 
     const title = document.createElement("h3")
     title.className = "text-lg font-semibold text-gray-900"
-    title.textContent = escapeHtml(survey.title)
+    title.textContent = survey.title // textContent automatically escapes HTML
 
     const closeButton = document.createElement("button")
     closeButton.className = "survey-close text-gray-400 hover:text-gray-600"
@@ -515,7 +515,7 @@ class UserFeedbackSystem {
 
     const label = document.createElement("label")
     label.className = "block text-sm font-medium text-gray-700"
-    label.textContent = `${escapeHtml(question.question)} ${question.required ? "*" : ""}`
+    label.textContent = `${question.question} ${question.required ? "*" : ""}` // textContent automatically escapes HTML
 
     container.appendChild(label)
 
@@ -552,7 +552,7 @@ class UserFeedbackSystem {
           input.className = "mr-2"
           const span = document.createElement("span")
           span.className = "text-sm text-gray-700"
-          span.textContent = escapeHtml(option)
+          span.textContent = option // textContent automatically escapes HTML
           optionLabel.appendChild(input)
           optionLabel.appendChild(span)
           choiceDiv.appendChild(optionLabel)
@@ -609,100 +609,7 @@ class UserFeedbackSystem {
     return container
   }
 
-  // 渲染调查问题
-  private renderSurveyQuestion(question: any, index: number): string {
-    const required = question.required ? "required" : ""
 
-    switch (question.type) {
-      case "rating":
-        return `
-          <div class="space-y-2">
-            <label class="block text-sm font-medium text-gray-700">
-              ${question.question} ${question.required ? "*" : ""}
-            </label>
-            <div class="flex gap-2">
-              ${Array.from(
-                { length: 5 },
-                (_, i) => `
-                <label class="flex items-center">
-                  <input type="radio" name="question_${index}" value="${i + 1}" ${required} class="sr-only">
-                  <div class="w-8 h-8 border-2 border-gray-300 rounded-full flex items-center justify-center cursor-pointer hover:border-yellow-400 peer-checked:border-yellow-400 peer-checked:bg-yellow-400">
-                    <svg class="w-4 h-4 text-white hidden peer-checked:block" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                    </svg>
-                  </div>
-                </label>
-              `,
-              ).join("")}
-            </div>
-          </div>
-        `
-
-      case "choice":
-        return `
-          <div class="space-y-2">
-            <label class="block text-sm font-medium text-gray-700">
-              ${question.question} ${question.required ? "*" : ""}
-            </label>
-            <div class="space-y-2">
-              ${
-                question.options
-                  ?.map(
-                    (option: string, optionIndex: number) => `
-                <label class="flex items-center">
-                  <input type="radio" name="question_${index}" value="${option}" ${required} class="mr-2">
-                  <span class="text-sm text-gray-700">${option}</span>
-                </label>
-              `,
-                  )
-                  .join("") || ""
-              }
-            </div>
-          </div>
-        `
-
-      case "text":
-        return `
-          <div class="space-y-2">
-            <label class="block text-sm font-medium text-gray-700">
-              ${question.question} ${question.required ? "*" : ""}
-            </label>
-            <textarea name="question_${index}" rows="3" ${required} 
-              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="请输入您的回答..."></textarea>
-          </div>
-        `
-
-      case "nps":
-        return `
-          <div class="space-y-2">
-            <label class="block text-sm font-medium text-gray-700">
-              ${question.question} ${question.required ? "*" : ""}
-            </label>
-            <div class="flex gap-1">
-              ${Array.from(
-                { length: 11 },
-                (_, i) => `
-                <label class="flex-1">
-                  <input type="radio" name="question_${index}" value="${i}" ${required} class="sr-only peer">
-                  <div class="w-full h-10 border border-gray-300 rounded flex items-center justify-center cursor-pointer hover:bg-blue-50 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 text-sm font-medium">
-                    ${i}
-                  </div>
-                </label>
-              `,
-              ).join("")}
-            </div>
-            <div class="flex justify-between text-xs text-gray-500">
-              <span>完全不推荐</span>
-              <span>非常推荐</span>
-            </div>
-          </div>
-        `
-
-      default:
-        return ""
-    }
-  }
 
   // 提交调查回答
   private async submitSurveyResponse(surveyId: string, form: HTMLFormElement): Promise<void> {
