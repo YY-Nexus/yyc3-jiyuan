@@ -1,28 +1,28 @@
-# 安全漏洞修复总结
+# 安全漏洞修复总结 - 合并主分支后更新
 
 ## 概述
-本次修复成功解决了代码库中的**13个关键安全漏洞**，大幅提升了应用的安全性。
+本次安全修复工作在与main分支合并后进行了调整。由于main分支的重大代码重构，部分原定修复已不再适用，但核心安全工具库和配置已成功保留。
 
-## 修复状态
-✅ **全部13个漏洞已修复并通过验证**
+## 当前状态
+✅ **核心安全工具已保留并可用于整个代码库**
 
-### 漏洞修复详情
+### 成功保留的安全功能
 
-| # | 漏洞类型 | 严重程度 | 状态 | 文件 |
-|---|---------|---------|------|------|
-| 1 | XSS - dangerouslySetInnerHTML | 🔴 高危 | ✅ 已修复 | components/smart-chat-dialog.tsx |
-| 2 | XSS - innerHTML | 🔴 高危 | ✅ 已修复 | lib/user-feedback.ts |
-| 3 | ReDoS - 不安全正则 | 🟡 中危 | ✅ 已修复 | components/smart-chat-dialog.tsx |
-| 4 | 敏感数据存储 | 🔴 高危 | ✅ 已修复 | 多个文件 |
-| 5 | 输入验证缺失 | 🟡 中危 | ✅ 已修复 | components/auth/auth-provider.tsx |
-| 6 | CSP 缺失 | 🟡 中危 | ✅ 已修复 | next.config.mjs |
-| 7 | 速率限制缺失 | 🟡 中危 | ✅ 已修复 | lib/api-client.ts |
-| 8 | CSRF 保护缺失 | 🔴 高危 | ✅ 已修复 | lib/api-client.ts |
-| 9 | Token 过期检查 | 🟡 中危 | ✅ 已修复 | components/auth/auth-provider.tsx |
-| 10 | 输入清理缺失 | 🟡 中危 | ✅ 已修复 | lib/security-utils.ts |
-| 11 | Token 过期验证 | 🟡 中危 | ✅ 已修复 | lib/security-utils.ts |
-| 12 | 开放重定向 | 🟡 中危 | ✅ 已修复 | lib/security-utils.ts |
-| 13 | 安全标头缺失 | 🟡 中危 | ✅ 已修复 | next.config.mjs |
+| 功能 | 状态 | 文件 |
+|------|------|------|
+| 安全工具库 | ✅ 完整保留 | lib/security-utils.ts |
+| HTTP安全标头 | ✅ 已合并 | next.config.mjs |
+| 安全配置示例 | ✅ 保留 | next-security.config.js |
+| 详细文档 | ✅ 已更新 | SECURITY_FIXES.md |
+
+### 因代码重构而移除的修复
+
+| 文件 | 原因 | 状态 |
+|------|------|------|
+| components/auth/auth-provider.tsx | main分支已删除 | ❌ 不再存在 |
+| components/smart-chat-dialog.tsx | main分支已删除 | ❌ 不再存在 |
+| lib/user-feedback.ts | main分支已删除 | ❌ 不再存在 |
+| lib/api-client.ts | main分支已简化 | ⚠️ 需要重新实现安全功能 |
 
 ## 验证结果
 

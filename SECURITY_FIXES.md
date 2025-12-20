@@ -1,73 +1,148 @@
-# Security Vulnerability Fixes
+# Security Vulnerability Fixes - Updated After Main Branch Merge
 
-本文档记录了针对13个安全漏洞的修复措施。
+## 概述
+本次修复原计划解决**13个关键安全漏洞**。在与main分支合并后，由于代码库结构的重大变更，部分修复已不再适用，但核心安全工具和配置仍然有效。
 
-## 修复的漏洞列表
+## 合并后的状态
 
-### 1. XSS漏洞 - dangerouslySetInnerHTML
-**位置**: `components/smart-chat-dialog.tsx`
-**修复**: 移除了 `dangerouslySetInnerHTML` 的使用，改用安全的 React 组件渲染搜索高亮。
-**影响**: 防止恶意用户通过搜索功能注入恶意脚本。
+### ✅ 保留的安全功能
 
-### 2. XSS漏洞 - innerHTML
-**位置**: `lib/user-feedback.ts`
-**修复**: 将 `innerHTML` 替换为安全的 DOM 元素创建方法，所有用户输入通过 `textContent` 设置。
-**影响**: 防止在调查问卷中注入恶意HTML代码。
+#### 1. 安全工具库 (`lib/security-utils.ts`)
+完整保留，提供以下功能：
+- HTML 清理和转义
+- 输入验证（邮箱、密码）
+- 搜索查询清理（防止ReDoS）
+- URL 清理（防止开放重定向）
+- CSRF Token 生成和验证
+- 安全存储类（SecureStorage）
+- 速率限制类（RateLimiter）
+- Token 过期检查
+- 安全 JSON 解析
+- 文件名清理
+- 输入清理
 
-### 3. ReDoS漏洞 - 不安全的正则表达式
-**位置**: `components/smart-chat-dialog.tsx`
-**修复**: 使用 `sanitizeSearchQuery` 函数转义特殊字符，防止正则表达式拒绝服务攻击。
-**影响**: 防止恶意用户通过精心构造的搜索查询导致服务器资源耗尽。
+#### 2. HTTP 安全标头 (`next.config.mjs`)
+已合并到新的配置中：
+- `Strict-Transport-Security` (HSTS)
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
 
-### 4. 敏感数据存储 - localStorage 加密
-**位置**: 多个文件
-**修复**: 实现了 `SecureStorage` 类，对存储在 localStorage 中的敏感数据进行加密。
-**影响**: 保护用户认证信息和其他敏感数据免受本地存储攻击。
+#### 3. 文档
+- `SECURITY_FIXES.md` - 安全修复详细文档（本文件，已更新）
+- `SECURITY_SUMMARY.md` - 执行摘要
+- `next-security.config.js` - 安全配置示例
 
-### 5. 输入验证缺失
-**位置**: `components/auth/auth-provider.tsx`
-**修复**: 添加了邮箱格式验证、密码强度验证和用户名长度验证。
-**影响**: 防止无效或恶意数据进入系统。
+### ❌ 已移除的功能（因main分支中文件已删除）
 
-### 6. Content Security Policy (CSP)
-**位置**: `next.config.mjs`, `next-security.config.js`
-**修复**: 实现了严格的 CSP 策略，限制脚本、样式和资源来源。
-**影响**: 大幅降低 XSS 攻击的风险。
+以下文件在main分支中已被删除或重写，因此相关的安全修复不再适用：
 
-### 7. 速率限制缺失
-**位置**: `lib/api-client.ts`
-**修复**: 实现了 `RateLimiter` 类，限制 API 请求频率（每分钟10个请求）。
-**影响**: 防止 API 滥用和 DDoS 攻击。
+1. **components/auth/auth-provider.tsx** - 已删除
+   - 原修复：安全存储、输入验证、Token过期检查
+   - 新代码：main分支使用了不同的认证实现
 
-### 8. CSRF 保护缺失
-**位置**: `lib/api-client.ts`
-**修复**: 为所有非 GET 请求自动添加 CSRF token。
-**影响**: 防止跨站请求伪造攻击。
+2. **components/smart-chat-dialog.tsx** - 已删除  
+   - 原修复：移除dangerouslySetInnerHTML、清理搜索查询
+   - 新代码：该组件在main分支中不再存在
 
-### 9. Token 过期检查缺失
-**位置**: `components/auth/auth-provider.tsx`
-**修复**: 添加了 `isTokenExpired` 函数，在使用前检查 token 是否过期。
-**影响**: 防止使用过期的认证凭证。
+3. **lib/user-feedback.ts** - 已删除
+   - 原修复：移除innerHTML、安全渲染调查问卷
+   - 新代码：用户反馈功能可能被重新实现
 
-### 10. 输入清理缺失
-**位置**: 多个文件
-**修复**: 实现了 `sanitizeInput` 和 `escapeHtml` 函数，清理所有用户输入。
-**影响**: 防止各种注入攻击。
+4. **lib/api-client.ts** - 已简化
+   - 原修复：CSRF保护、速率限制、请求拦截器
+   - 当前状态：保留了简化版本，未包含原有的复杂安全功能
+   - 建议：可以基于新的简单结构重新实现这些功能
 
-### 11. 认证Token 过期验证
-**位置**: `lib/security-utils.ts`, `components/auth/auth-provider.tsx`
-**修复**: 添加了 token 过期时间验证，提前5分钟刷新 token。
-**影响**: 确保用户会话安全，及时发现无效认证。
+## 建议：为新的main分支实现安全功能
 
-### 12. 开放重定向漏洞
-**位置**: `lib/security-utils.ts`
-**修复**: 实现了 `sanitizeUrl` 函数，只允许白名单域名的重定向。
-**影响**: 防止钓鱼攻击和恶意重定向。
+虽然某些文件已被删除，但安全功能仍然重要。以下是如何在新代码中应用这些安全工具的建议：
 
-### 13. 安全标头缺失
-**位置**: `next.config.mjs`
-**修复**: 添加了完整的安全 HTTP 标头集合（HSTS, X-Frame-Options, X-Content-Type-Options等）。
-**影响**: 提供多层安全防护，遵循安全最佳实践。
+### 1. 在新的认证流程中使用安全工具
+
+如果您的应用有新的登录/注册表单，可以这样使用：
+
+```typescript
+import { validateEmail, validatePassword, secureStorage } from "@/lib/security-utils"
+
+// 在表单验证中
+if (!validateEmail(email)) {
+  setError("请输入有效的邮箱地址")
+  return
+}
+
+const { isValid, errors } = validatePassword(password)
+if (!isValid) {
+  setError(errors.join(", "))
+  return
+}
+
+// 存储认证token时
+await secureStorage.setItem("authToken", token)
+```
+
+### 2. 在API调用中添加CSRF保护
+
+虽然api-client.ts已简化，但您可以在需要的地方手动添加CSRF token：
+
+```typescript
+import { generateCsrfToken } from "@/lib/security-utils"
+
+// 获取或生成CSRF token
+const getCsrfToken = () => {
+  let token = sessionStorage.getItem("csrf_token")
+  if (!token) {
+    token = generateCsrfToken()
+    sessionStorage.setItem("csrf_token", token)
+  }
+  return token
+}
+
+// 在POST/PUT/PATCH/DELETE请求中添加
+const response = await fetch("/api/endpoint", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-CSRF-Token": getCsrfToken(),
+  },
+  body: JSON.stringify(data)
+})
+```
+
+### 3. 在搜索或用户输入中使用清理功能
+
+```typescript
+import { sanitizeSearchQuery, sanitizeInput, escapeHtml } from "@/lib/security-utils"
+
+// 清理搜索查询（防止ReDoS）
+const cleanQuery = sanitizeSearchQuery(userInput)
+const regex = new RegExp(cleanQuery, "gi")
+
+// 清理表单输入
+const cleanName = sanitizeInput(userName, 100)
+
+// 在显示用户生成内容时
+<div>{escapeHtml(userContent)}</div>
+```
+
+### 4. 实现速率限制
+
+```typescript
+import { rateLimiter } from "@/lib/security-utils"
+
+// 在API路由中
+export async function POST(request: Request) {
+  const userId = getUserIdFromSession(request)
+  
+  if (!rateLimiter.isAllowed(userId, 10, 60000)) {
+    return new Response("Too many requests", { status: 429 })
+  }
+  
+  // 处理请求...
+}
+```
 
 ## 新增的安全工具
 
